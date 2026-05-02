@@ -1,3 +1,6 @@
+# Don't commit build
+build/
+
 # Prerequisites
 *.d
 
