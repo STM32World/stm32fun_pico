@@ -12,7 +12,7 @@
 #include <stdio.h>
 
 #ifndef LED_DELAY_MS
-#define LED_DELAY_MS 250
+#define LED_DELAY_MS 500
 #endif
 
 // Perform initialisation
@@ -83,7 +83,7 @@ int main() {
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
-    uint32_t now, next_blink = 500, next_tick = 1000;
+    uint32_t now, next_blink = LED_DELAY_MS, next_tick = 1000;
 
     while (true) {
 
@@ -91,7 +91,7 @@ int main() {
 
         if (now > next_blink) {
             pico_toggle_led();
-            next_blink = now + 500;
+            next_blink = now + LED_DELAY_MS;
         }
 
         if (now >= next_tick) {
