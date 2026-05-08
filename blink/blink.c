@@ -5,23 +5,26 @@
  *
  */
 
-#include "hardware/gpio.h"
-#include "hardware/regs/sio.h" // Add this explicitly
-#include "pico/multicore.h"    // Required header
-#include "pico/mutex.h"
-#include "pico/stdlib.h"
+// Include necessary headers from the Pico SDK
+#include "hardware/gpio.h"  // For GPIO control
+#include "pico/multicore.h" // For multicore support
+#include "pico/mutex.h"     // For mutexes
+#include "pico/stdlib.h"    // For sleep and stdio initialization
+
+// Include standard I/O for printf
 #include <stdio.h>
 
 #ifndef LED_DELAY_MS
 #define LED_DELAY_MS 500
 #endif
 
+// Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
 
 // Perform initialisation
 int pico_led_init(void) {
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_init(PICO_DEFAULT_LED_PIN);              // The LED pin is defined in the board header as PICO_DEFAULT_LED_PIN
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT); // Set the LED pin as an output
     return PICO_OK;
 }
 
@@ -47,11 +50,15 @@ void pico_toggle_led() {
  */
 void core1_entry() {
 
+    mutex_enter_blocking(&printf_mutex); // Synchronize with Core 0 for printing
+    printf("Core 1: Booting...\n");
+    mutex_exit(&printf_mutex);
+
     uint32_t now, loop_cnt = 0, next_tick = 1500;
 
     while (1) {
 
-        now = time_ms_32();
+        now = time_ms_32(); // Unsure if mutex is needed here.
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -64,7 +71,7 @@ void core1_entry() {
         ++loop_cnt;
 
         // Give the memory bus and Core 0 a chance to breathe
-        // tight_loop_contents();
+        tight_loop_contents();
     }
 }
 
@@ -72,18 +79,22 @@ void core1_entry() {
  * @brief Main entry point for Core 0.
  */
 int main() {
-    int rc = pico_led_init();
 
-    hard_assert(rc == PICO_OK);
+    int rc = pico_led_init(); // Initialize the LED GPIO
 
-    stdio_init_all();
+    hard_assert(rc == PICO_OK); // Ensure LED initialization was successful
+
+    stdio_init_all(); // Initialize all standard I/O (UART, USB, etc.)
 
     // Explicitly override the baud rate for UART0 to 2M
-    // uart_set_baudrate(uart0, 2000000);
+    uart_set_baudrate(uart0, 921600);
 
     // Give UART a moment to stabilize
     sleep_ms(50);
+
+    mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
+    mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
@@ -94,15 +105,15 @@ int main() {
 
         now = time_ms_32();
 
-        //        if (now > next_blink) {
-        //            pico_toggle_led();
-        //            next_blink = now + LED_DELAY_MS;
-        //        }
+        if (now > next_blink) {
+            pico_toggle_led();
+            next_blink = now + LED_DELAY_MS;
+        }
 
         if (now >= next_tick) {
-            mutex_enter_blocking(&printf_mutex);
+            mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
             printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
-            mutex_exit(&printf_mutex);
+            mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
             next_tick = now + 1000;
         }
@@ -110,3 +121,5 @@ int main() {
         ++loop_cnt;
     }
 }
+
+// vim: ts=4 et nowrap

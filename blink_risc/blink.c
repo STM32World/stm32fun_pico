@@ -5,17 +5,20 @@
  *
  */
 
-#include "hardware/gpio.h"
-#include "hardware/regs/sio.h" // Add this explicitly
-#include "pico/multicore.h"    // Required header
-#include "pico/mutex.h"
-#include "pico/stdlib.h"
+// Include necessary headers from the Pico SDK
+#include "hardware/gpio.h"  // For GPIO control
+#include "pico/multicore.h" // For multicore support
+#include "pico/mutex.h"     // For mutexes
+#include "pico/stdlib.h"    // For standard library functions like sleep_ms and stdio_init_all
+
+// Include standard I/O for printf
 #include <stdio.h>
 
 #ifndef LED_DELAY_MS
 #define LED_DELAY_MS 500
 #endif
 
+// Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
 
 // Perform initialisation
@@ -46,6 +49,10 @@ void pico_toggle_led() {
  * @brief Entry point for Core 1.
  */
 void core1_entry() {
+
+    mutex_enter_blocking(&printf_mutex);
+    printf("Core 1: Booting...\n");
+    mutex_exit(&printf_mutex);
 
     uint32_t now, loop_cnt = 0, next_tick = 1500;
 
@@ -83,7 +90,10 @@ int main() {
 
     // Give UART a moment to stabilize
     sleep_ms(50);
+
+    mutex_enter_blocking(&printf_mutex);
     printf("\n\n\nCore 0: Booting...\n");
+    mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
@@ -94,10 +104,10 @@ int main() {
 
         now = time_ms_32();
 
-        //        if (now > next_blink) {
-        //            pico_toggle_led();
-        //            next_blink = now + LED_DELAY_MS;
-        //        }
+        if (now > next_blink) {
+            pico_toggle_led();
+            next_blink = now + LED_DELAY_MS;
+        }
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -110,3 +120,5 @@ int main() {
         ++loop_cnt;
     }
 }
+
+// vim: ts=4 et nowrap

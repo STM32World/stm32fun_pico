@@ -55,10 +55,6 @@ target_link_libraries(
 pico_enable_stdio_uart(blink 1)
 pico_enable_stdio_usb(blink 0)
 
-if (PICO_CYW43_SUPPORTED)
-    target_link_libraries(blink pico_cyw43_arch_none)
-endif()
-
 # create map/bin/hex file etc.
 pico_add_extra_outputs(blink)
 
