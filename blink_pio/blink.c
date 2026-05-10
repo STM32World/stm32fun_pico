@@ -6,21 +6,21 @@
  *
  * Copyright (c) 2026 STM32World <lth@stm32world.com>
  *
- * Second example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.  In the
- * example "blink.c", the LED is toggled in the main loop of Core 0, and both cores print messages every second.  In this
- * version, the LED is toggled using a repeating timer callback, which allows for more precise timing and frees up the
- * main loop to focus on printing messages.  The code also demonstrates how to use mutexes to synchronize access to
- * shared resources (like printf) between the two cores.
- *
+ * Third blink example for the Raspberry Pi Pico, demonstrating:
+ * - Using PIO to control the LED
+ * - Multicore support
+ * - Mutex synchronization
  */
 
 // Include necessary headers from the Pico SDK
 #include "blink.pio.h"
-#include "hardware/gpio.h" // For GPIO control
-#include "hardware/pio.h"
-#include "pico/multicore.h" // For multicore support
-#include "pico/mutex.h"     // For mutexes
-#include "pico/stdlib.h"    // For sleep and stdio initialization
+#include "hardware/clocks.h" // For clock frequency information
+#include "hardware/gpio.h"   // For GPIO control
+#include "hardware/pio.h"    // For PIO control
+#include "hardware/vreg.h"   // Needed for voltage scaling
+#include "pico/multicore.h"  // For multicore support
+#include "pico/mutex.h"      // For mutexes
+#include "pico/stdlib.h"     // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
@@ -54,22 +54,6 @@ static inline uint32_t time_ms_32(void) {
 }
 
 /**
- * @brief Toggles the state of the default LED.
- */
-void pico_toggle_led() {
-    gpio_xor_mask64(((uint64_t)1 << PICO_DEFAULT_LED_PIN));
-}
-
-/**
- * @brief Callback function for the repeating timer.
- * This function is called every 500ms as set up in main().
- */
-bool repeating_timer_callback(struct repeating_timer *t) {
-    pico_toggle_led();
-    return true;
-}
-
-/**
  * @brief Helper to convert frequency to PIO loop delay.
  */
 uint32_t freq_to_pio_delay(float freq) {
@@ -96,7 +80,7 @@ void core1_entry() {
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
-            printf("Core 1 tick %lu (loop = %lu)\n", (unsigned long)now, (unsigned long)loop_cnt);
+            printf("Core 1 tick %lu ( loop = %9lu )\n", (unsigned long)now, (unsigned long)loop_cnt);
             mutex_exit(&printf_mutex);
             loop_cnt = 0;
             next_tick = now + 1000;
@@ -114,7 +98,13 @@ void core1_entry() {
  */
 int main() {
 
-    // struct repeating_timer timer;
+    // Boost voltage to 1.3V for stability at higher clocks
+    // Standard is 1.1V; 1.3V is usually safe for 250MHz-350MHz
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
+
+    // Set the frequency in kHz (e.g., 300,000 kHz = 300 MHz)
+    // 'true' means it will wait for the clock to stabilize
+    set_sys_clock_khz(300000, true);
 
     int rc = pico_led_init(); // Initialize the LED GPIO
 
@@ -141,49 +131,46 @@ int main() {
     // Initial push
     pio_sm_put_blocking(pio, sm, freq_to_pio_delay(current_freq));
 
-    // Give UART a moment to stabilize
-    sleep_ms(50);
+    sleep_ms(100); // Give the PIO a moment to start up
 
     mutex_enter_blocking(&printf_mutex);
     printf("\n\n\nCore 0: Booting...\n");
+    printf("Running at %d MHz\n", frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS) / 1000);
     mutex_exit(&printf_mutex);
 
-    // Launch core1_entry function on Core 1
-    multicore_launch_core1(core1_entry);
+    multicore_launch_core1(core1_entry); // Launch core1_entry function on Core 1
 
-    uint32_t now, loop_cnt = 0, next_tick = 1000;
+    register uint32_t now, loop_cnt = 0;
+    uint32_t next_tick = 1000;
     uint32_t next_freq_update = 2000;
 
     while (true) {
 
         now = time_ms_32();
 
-        // 1. Frequency Logic (Cycle 0.5 Hz -> 10 Hz)
-        if (now >= next_freq_update) {
-            if (current_freq < 1.0f)
-                current_freq = 1.0f;
-            else if (current_freq < 2.0f)
-                current_freq = 2.0f;
-            else if (current_freq < 5.0f)
-                current_freq = 5.0f;
-            else if (current_freq < 10.0f)
-                current_freq = 10.0f;
-            else
-                current_freq = 0.5f;
+        if (now >= next_tick) { // Every second, print the current tick and loop count
 
-            if (!pio_sm_is_tx_fifo_full(pio, sm)) {
-                pio_sm_put(pio, sm, freq_to_pio_delay(current_freq));
+            if (!(now % 5000)) { // Every 5 seconds, update the frequency
+                if (current_freq < 1.0f)
+                    current_freq = 1.0f;
+                else if (current_freq < 2.0f)
+                    current_freq = 2.0f;
+                else if (current_freq < 5.0f)
+                    current_freq = 5.0f;
+                else if (current_freq < 10.0f)
+                    current_freq = 10.0f;
+                else
+                    current_freq = 0.5f;
+
+                if (!pio_sm_is_tx_fifo_full(pio, sm)) {
+                    pio_sm_put(pio, sm, freq_to_pio_delay(current_freq));
+                }
             }
 
-            next_freq_update = now + 3000;
-        }
-
-        // 2. Tick Logic (Every 1 second)
-        if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
-            uint32_t current_pc = pio_sm_get_pc(pio, sm);
-            printf("Core 0 tick %lu (loop = %lu) | Freq: %.1f Hz | PIO PC: %u (Offset: %u)\n", (unsigned long)now, (unsigned long)loop_cnt, current_freq, (unsigned int)current_pc, (unsigned int)offset);
+            printf("Core 0 tick %lu ( loop = %9lu freq %.1f Hz )\n", (unsigned long)now, (unsigned long)loop_cnt, current_freq);
             mutex_exit(&printf_mutex);
+
             loop_cnt = 0;
             next_tick = now + 1000;
         }

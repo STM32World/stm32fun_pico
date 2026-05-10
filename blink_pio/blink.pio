@@ -1,38 +1,67 @@
 .program blink
 
-    pull block      ; Initial wait for the first frequency value
-    out y, 32       ; Store initial period in Y
+    ; --- Initialization ---
+    pull block      ; Stall until Core 0 sends the first 32-bit delay value
+    out y, 32       ; Shift that value from OSR into the Y register for persistence
 
 .wrap_target
-    mov x, status   ; Status is 1 if FIFO is empty (level < 1)
-    jmp !x pull_new ; If status is 0 (NOT empty), go pull
-    jmp skip        ; Otherwise skip to blink
+    ; --- Non-blocking Frequency Update Logic ---
+    ; We check the FIFO status before pulling to avoid stalling the blink loop
+    mov x, status   ; Copy configured status (1 if FIFO level < 1) into X
+    jmp !x pull_new ; If X is 0, FIFO is NOT empty (contains data). Go fetch it.
+    jmp skip        ; If X is 1, FIFO is empty. Skip pull and keep using current Y.
+
 pull_new:
-    pull block      
-    out y, 32       
+    pull block      ; Manually pull the waiting data into the OSR
+    out y, 32       ; Update Y with the new delay value from the OSR
+
 skip:
-    set pins, 0     ; LED On
-    mov x, y
+    ; --- LED On Phase ---
+    set pins, 0     ; Drive pin low (assuming active-low LED)
+    mov x, y        ; Load current delay value from Y into the X counter
 on_delay:
-    jmp x-- on_delay
-    
-    set pins, 1     ; LED Off
-    mov x, y
+    jmp x-- on_delay [1] ; Loop here until X hits 0. [1] adds an extra cycle per loop.
+
+    ; --- LED Off Phase ---
+    set pins, 1     ; Drive pin high (LED off)
+    mov x, y        ; Reload the delay value from Y into the X counter
 off_delay:
-    jmp x-- off_delay
+    jmp x-- off_delay    ; Loop here until X hits 0.
 .wrap
 
 % c-sdk {
+/**
+ * @brief Initializes the PIO state machine for the blink program.
+ * * @param pio    The PIO instance (pio0, pio1, or pio2 on RP2350).
+ * @param sm     The state machine index (0-3).
+ * @param offset The memory offset where the blink program is loaded.
+ * @param pin    The GPIO pin to be used for the LED.
+ * @param div    The clock divider to scale the system clock to the PIO frequency.
+ */
 static inline void blink_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {
+   // Create a default configuration for the state machine
    pio_sm_config c = blink_program_get_default_config(offset);
+   
+   // Configure the 'set' instructions to operate on the LED pin
    sm_config_set_set_pins(&c, pin, 1);
    
-   // Set status to: 1 if TX FIFO level < 1
+   /** * Set up the Status register:
+    * STATUS_TX_LESSTHAN with a value of 1 means the 'mov x, status' 
+    * instruction will return 1 if the TX FIFO level is less than 1 (Empty).
+    * It returns 0 if there is at least one word waiting (Not Empty).
+    */
    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
    
+   // Map the GPIO pin for PIO usage
    pio_gpio_init(pio, pin);
+   
+   // Set the LED pin direction to output
    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+   
+   // Set the clock divider
    sm_config_set_clkdiv(&c, div);
+   
+   // Apply configuration and initialize the state machine
    pio_sm_init(pio, sm, offset, &c);
 }
 %}

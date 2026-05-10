@@ -45,19 +45,12 @@ add_executable(blink
     blink.c
 )
 
-pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
-
 # pull in common dependencies
 target_link_libraries(
     blink 
     pico_stdlib 
     pico_multicore
-    hardware_pio
-)
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    PICO_PRINTF_PICO=1
-    PICO_USE_FASTEST_SUPPORTED_CLOCK=1
+    hardware_pwm
 )
 
 pico_enable_stdio_uart(blink 1)
