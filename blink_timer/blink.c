@@ -1,4 +1,9 @@
 /**
+ * @file blink.c
+ * @brief Example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
+ * @author STM32World <lth@stm32world.com>
+ * @date 2026
+ *
  * Copyright (c) 2026 STM32World <lth@stm32world.com>
  *
  * Second example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.  In the
@@ -25,7 +30,10 @@
 // Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
 
-// Perform initialisation
+/**
+ * @brief Initialize the Pico LED.
+ * @return PICO_OK if successful, otherwise an error code.
+ */
 int pico_led_init(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);              // The LED pin is defined in the board header as PICO_DEFAULT_LED_PIN
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT); // Set the LED pin as an output
@@ -107,7 +115,7 @@ int main() {
 
     // Negative delay means "run every X ms regardless of how long callback took"
     // Positive delay means "wait X ms after callback finishes"
-    add_repeating_timer_ms(500, repeating_timer_callback, NULL, &timer);
+    add_repeating_timer_ms(100, repeating_timer_callback, NULL, &timer);
 
     // Give UART a moment to stabilize
     sleep_ms(50);
@@ -124,11 +132,6 @@ int main() {
     while (true) {
 
         now = time_ms_32();
-
-        // if (now > next_blink) {
-        //     pico_toggle_led();
-        //     next_blink = now + LED_DELAY_MS;
-        // }
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf

@@ -16,7 +16,7 @@ else()
     set(USERHOME $ENV{HOME})
 endif()
 set(sdkVersion 2.2.0)
-set(toolchainVersion RISCV_ZCB_RPI_2_2_0_3)
+set(toolchainVersion 14_2_Rel1)
 set(picotoolVersion 2.2.0-a4)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
@@ -24,8 +24,7 @@ if (EXISTS ${picoVscode})
 endif()
 # ====================================================================================
 
-#set(PICO_PLATFORM rp2350)
-set(PICO_PLATFORM rp2350-riscv)
+set(PICO_PLATFORM rp2350)
 
 # custom board headers
 set(PICO_BOARD_HEADER_DIRS "${CMAKE_SOURCE_DIR}/boards/include" CACHE STRING "Extra board header dirs")
@@ -46,20 +45,18 @@ add_executable(blink
     blink.c
 )
 
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+
 # pull in common dependencies
 target_link_libraries(
     blink 
     pico_stdlib 
     pico_multicore
-    hardware_hazard3
+    hardware_pio
 )
 
 pico_enable_stdio_uart(blink 1)
 pico_enable_stdio_usb(blink 0)
-
-if (PICO_CYW43_SUPPORTED)
-    target_link_libraries(blink pico_cyw43_arch_none)
-endif()
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(blink)

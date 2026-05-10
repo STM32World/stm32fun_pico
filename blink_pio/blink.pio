@@ -1,0 +1,38 @@
+.program blink
+
+    pull block      ; Initial wait for the first frequency value
+    out y, 32       ; Store initial period in Y
+
+.wrap_target
+    mov x, status   ; Status is 1 if FIFO is empty (level < 1)
+    jmp !x pull_new ; If status is 0 (NOT empty), go pull
+    jmp skip        ; Otherwise skip to blink
+pull_new:
+    pull block      
+    out y, 32       
+skip:
+    set pins, 0     ; LED On
+    mov x, y
+on_delay:
+    jmp x-- on_delay
+    
+    set pins, 1     ; LED Off
+    mov x, y
+off_delay:
+    jmp x-- off_delay
+.wrap
+
+% c-sdk {
+static inline void blink_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {
+   pio_sm_config c = blink_program_get_default_config(offset);
+   sm_config_set_set_pins(&c, pin, 1);
+   
+   // Set status to: 1 if TX FIFO level < 1
+   sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
+   
+   pio_gpio_init(pio, pin);
+   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+   sm_config_set_clkdiv(&c, div);
+   pio_sm_init(pio, sm, offset, &c);
+}
+%}
