@@ -20,7 +20,6 @@
 #include "hardware/vreg.h"   // Needed for voltage scaling
 #include "pico/multicore.h"  // For multicore support
 #include "pico/mutex.h"      // For mutexes
-#include "pico/platform.h"   // For absolute time functions
 #include "pico/stdlib.h"     // For sleep and stdio initialization
 
 // Include standard I/O for printf
@@ -143,7 +142,6 @@ int main() {
            "Arm Cortex-M33",
 #endif
            frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS) / 1000);
-
     mutex_exit(&printf_mutex);
 
     multicore_launch_core1(core1_entry); // Launch core1_entry function on Core 1
