@@ -18,7 +18,7 @@
 #include <stdio.h>
 
 #ifndef LED_DELAY
-#define LED_DELAY 500000 // 500ms in microseconds
+#define LED_DELAY 500 // 500ms
 #endif
 
 // Mutex for synchronizing access to printf
@@ -32,13 +32,15 @@ int pico_led_init(void) {
 }
 
 /**
- * @brief Returns a 32-bit millisecond counter.
- * Equivalent to STM32's uwTick.
- * * This uses the 64-bit hardware timer (1MHz) and scales to ms.
- * Rollover occurs every ~49.7 days.
+ * @brief Universal uS to mS for ARM and RISC-V.
+ * This version is overflow-safe for 64-bit inputs and warning-free.
  */
 static inline uint32_t time_ms_32(void) {
-    return (uint32_t)to_ms_since_boot(get_absolute_time());
+    // Constant: 0x418937 (approx 2^32 / 1000)
+    // We multiply by 0x418937 and shift by 32.
+    // This is mathematically: (us * 4294967) / 4294967296
+    // It is very fast and overflow-safe for uptime up to 136 years.
+    return (uint32_t)((time_us_64() * 0x418937ull) >> 32);
 }
 
 /**
@@ -57,18 +59,18 @@ void core1_entry() {
     printf("Core 1: Booting...\n");
     mutex_exit(&printf_mutex);
 
-    uint64_t now, loop_cnt = 0, next_tick = 1500000;
+    uint32_t now, loop_cnt = 0, next_tick = 1500;
 
     while (1) {
 
-        now = get_absolute_time(); // Unsure if mutex is needed here.
+        now = time_ms_32(); // Unsure if mutex is needed here.
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
-            printf("Core 1 tick %lu (loop = %lu)\n", (uint32_t)(now / 1000), loop_cnt);
+            printf("Core 1 tick %lu (loop = %lu)\n", now, loop_cnt);
             mutex_exit(&printf_mutex);
             loop_cnt = 0;
-            next_tick = now + 1000000;
+            next_tick = now + 1000;
         }
 
         ++loop_cnt;
@@ -82,6 +84,14 @@ void core1_entry() {
  * @brief Main entry point for Core 0.
  */
 int main() {
+
+    // Boost voltage to 1.3V for stability at higher clocks
+    // Standard is 1.1V; 1.3V is usually safe for 250MHz-350MHz
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
+
+    // Set the frequency in kHz (e.g., 300,000 kHz = 300 MHz)
+    // 'true' means it will wait for the clock to stabilize
+    set_sys_clock_khz(300000, true);
 
     int rc = pico_led_init(); // Initialize the LED GPIO
 
@@ -110,11 +120,11 @@ int main() {
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
-    uint64_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000 * 1000;
+    uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000;
 
     while (true) {
 
-        now = get_absolute_time(); // Unsure if mutex is needed here.
+        now = time_ms_32(); // Unsure if mutex is needed here.
 
         if (now >= next_blink) {
             pico_toggle_led();
@@ -123,10 +133,10 @@ int main() {
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
-            printf("Core 0 tick %lu (loop = %lu)\n", (uint32_t)(now / 1000), loop_cnt);
+            printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
             mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
-            next_tick = now + 1000000;
+            next_tick = now + 1000;
         }
 
         ++loop_cnt;

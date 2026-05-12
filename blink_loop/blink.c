@@ -6,16 +6,19 @@
  */
 
 // Include necessary headers from the Pico SDK
-#include "hardware/gpio.h"  // For GPIO control
-#include "pico/multicore.h" // For multicore support
-#include "pico/mutex.h"     // For mutexes
-#include "pico/stdlib.h"    // For sleep and stdio initialization
+
+#include "hardware/clocks.h" // For clock frequency information
+#include "hardware/gpio.h"   // For GPIO control
+#include "hardware/vreg.h"   // Needed for voltage scaling
+#include "pico/multicore.h"  // For multicore support
+#include "pico/mutex.h"      // For mutexes
+#include "pico/stdlib.h"     // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
 
-#ifndef LED_DELAY_MS
-#define LED_DELAY_MS 500
+#ifndef LED_DELAY
+#define LED_DELAY 500 // 500ms
 #endif
 
 // Mutex for synchronizing access to printf
@@ -29,13 +32,15 @@ int pico_led_init(void) {
 }
 
 /**
- * @brief Returns a 32-bit millisecond counter.
- * Equivalent to STM32's uwTick.
- * * This uses the 64-bit hardware timer (1MHz) and scales to ms.
- * Rollover occurs every ~49.7 days.
+ * @brief Universal uS to mS for ARM and RISC-V.
+ * This version is overflow-safe for 64-bit inputs and warning-free.
  */
 static inline uint32_t time_ms_32(void) {
-    return (uint32_t)to_ms_since_boot(get_absolute_time());
+    // Constant: 0x418937 (approx 2^32 / 1000)
+    // We multiply by 0x418937 and shift by 32.
+    // This is mathematically: (us * 4294967) / 4294967296
+    // It is very fast and overflow-safe for uptime up to 136 years.
+    return (uint32_t)((time_us_64() * 0x418937ull) >> 32);
 }
 
 /**
@@ -54,11 +59,11 @@ void core1_entry() {
     printf("Core 1: Booting...\n");
     mutex_exit(&printf_mutex);
 
-    uint64_t now, loop_cnt = 0, next_tick = 1500000;
+    uint32_t now, loop_cnt = 0, next_tick = 1500;
 
     while (1) {
 
-        now = get_absolute_time(); // Unsure if mutex is needed here.
+        now = time_ms_32(); // Unsure if mutex is needed here.
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -80,6 +85,14 @@ void core1_entry() {
  */
 int main() {
 
+    // Boost voltage to 1.3V for stability at higher clocks
+    // Standard is 1.1V; 1.3V is usually safe for 250MHz-350MHz
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
+
+    // Set the frequency in kHz (e.g., 300,000 kHz = 300 MHz)
+    // 'true' means it will wait for the clock to stabilize
+    set_sys_clock_khz(300000, true);
+
     int rc = pico_led_init(); // Initialize the LED GPIO
 
     hard_assert(rc == PICO_OK); // Ensure LED initialization was successful
@@ -94,20 +107,28 @@ int main() {
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
+    printf("Running on %s at %d MHz\n",
+#ifdef __riscv
+           "RISC-V",
+#else
+           "Arm Cortex-M33",
+#endif
+           frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS) / 1000);
+
     mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
-    uint64_t now, loop_cnt = 0, next_blink = LED_DELAY_MS * 1000, next_tick = 1000 * 1000;
+    uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000;
 
     while (true) {
 
-        now = get_absolute_time(); // Unsure if mutex is needed here.
+        now = time_ms_32(); // Unsure if mutex is needed here.
 
-        if (now > next_blink) {
+        if (now >= next_blink) {
             pico_toggle_led();
-            next_blink = now + LED_DELAY_MS * 1000;
+            next_blink = now + LED_DELAY;
         }
 
         if (now >= next_tick) {
@@ -115,7 +136,7 @@ int main() {
             printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
             mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
-            next_tick = now + 1000000;
+            next_tick = now + 1000;
         }
 
         ++loop_cnt;
