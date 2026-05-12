@@ -6,10 +6,13 @@
  */
 
 // Include necessary headers from the Pico SDK
-#include "hardware/gpio.h"  // For GPIO control
-#include "pico/multicore.h" // For multicore support
-#include "pico/mutex.h"     // For mutexes
-#include "pico/stdlib.h"    // For sleep and stdio initialization
+
+#include "hardware/clocks.h" // For clock frequency information
+#include "hardware/gpio.h"   // For GPIO control
+#include "hardware/vreg.h"   // Needed for voltage scaling
+#include "pico/multicore.h"  // For multicore support
+#include "pico/mutex.h"      // For mutexes
+#include "pico/stdlib.h"     // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
@@ -94,6 +97,14 @@ int main() {
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
+    printf("Running on %s at %d MHz\n",
+#ifdef __riscv
+           "RISC-V",
+#else
+           "Arm Cortex-M33",
+#endif
+           frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS) / 1000);
+
     mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
