@@ -14,8 +14,8 @@
 // Include standard I/O for printf
 #include <stdio.h>
 
-#ifndef LED_DELAY_MS
-#define LED_DELAY_MS 500
+#ifndef LED_DELAY
+#define LED_DELAY 500000 // 500ms in microseconds
 #endif
 
 // Mutex for synchronizing access to printf
@@ -54,18 +54,18 @@ void core1_entry() {
     printf("Core 1: Booting...\n");
     mutex_exit(&printf_mutex);
 
-    uint32_t now, loop_cnt = 0, next_tick = 1500;
+    uint64_t now, loop_cnt = 0, next_tick = 1500000;
 
     while (1) {
 
-        now = time_ms_32(); // Unsure if mutex is needed here.
+        now = get_absolute_time(); // Unsure if mutex is needed here.
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
-            printf("Core 1 tick %lu (loop = %lu)\n", now, loop_cnt);
+            printf("Core 1 tick %lu (loop = %lu)\n", (uint32_t)(now / 1000), loop_cnt);
             mutex_exit(&printf_mutex);
             loop_cnt = 0;
-            next_tick = now + 1000;
+            next_tick = now + 1000000;
         }
 
         ++loop_cnt;
@@ -99,23 +99,23 @@ int main() {
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
-    uint32_t now, loop_cnt = 0, next_blink = LED_DELAY_MS, next_tick = 1000;
+    uint64_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000 * 1000;
 
     while (true) {
 
-        now = time_ms_32();
+        now = get_absolute_time(); // Unsure if mutex is needed here.
 
-        if (now > next_blink) {
+        if (now >= next_blink) {
             pico_toggle_led();
-            next_blink = now + LED_DELAY_MS;
+            next_blink = now + LED_DELAY;
         }
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
-            printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
+            printf("Core 0 tick %lu (loop = %lu)\n", (uint32_t)(now / 1000), loop_cnt);
             mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
-            next_tick = now + 1000;
+            next_tick = now + 1000000;
         }
 
         ++loop_cnt;
