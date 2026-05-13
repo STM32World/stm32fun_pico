@@ -15,10 +15,12 @@
  */
 
 // Include necessary headers from the Pico SDK
-#include "hardware/gpio.h"  // For GPIO control
-#include "pico/multicore.h" // For multicore support
-#include "pico/mutex.h"     // For mutexes
-#include "pico/stdlib.h"    // For sleep and stdio initialization
+#include "hardware/clocks.h" // For clock configuration
+#include "hardware/gpio.h"   // For GPIO control
+#include "hardware/vreg.h"   // Needed for voltage scaling
+#include "pico/multicore.h"  // For multicore support
+#include "pico/mutex.h"      // For mutexes
+#include "pico/stdlib.h"     // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
@@ -42,13 +44,15 @@ int pico_led_init(void) {
 }
 
 /**
- * @brief Returns a 32-bit millisecond counter.
- * Equivalent to STM32's uwTick.
- * * This uses the 64-bit hardware timer (1MHz) and scales to ms.
- * Rollover occurs every ~49.7 days.
+ * @brief Universal uS to mS for ARM and RISC-V.
+ * This version is overflow-safe for 64-bit inputs and warning-free.
  */
 static inline uint32_t time_ms_32(void) {
-    return (uint32_t)to_ms_since_boot(get_absolute_time());
+    // Constant: 0x418937 (approx 2^32 / 1000)
+    // We multiply by 0x418937 and shift by 32.
+    // This is mathematically: (us * 4294967) / 4294967296
+    // It is very fast and overflow-safe for uptime up to 136 years.
+    return (uint32_t)((time_us_64() * 0x418937ull) >> 32);
 }
 
 /**
@@ -104,6 +108,14 @@ int main() {
 
     struct repeating_timer timer;
 
+    // Boost voltage to 1.3V for stability at higher clocks
+    // Standard is 1.1V; 1.3V is usually safe for 250MHz-350MHz
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
+
+    // Set the frequency in kHz (e.g., 300,000 kHz = 300 MHz)
+    // 'true' means it will wait for the clock to stabilize
+    set_sys_clock_khz(300000, true);
+
     int rc = pico_led_init(); // Initialize the LED GPIO
 
     hard_assert(rc == PICO_OK); // Ensure LED initialization was successful
@@ -122,6 +134,14 @@ int main() {
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
+    printf("Running on %s at %d MHz\n",
+#ifdef __riscv
+           "RISC-V",
+#else
+           "Arm Cortex-M33",
+#endif
+           frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS) / 1000);
+
     mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
