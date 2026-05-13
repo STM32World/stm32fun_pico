@@ -7,12 +7,15 @@
 
 // Include necessary headers from the Pico SDK
 
-#include "hardware/clocks.h" // For clock frequency information
-#include "hardware/gpio.h"   // For GPIO control
-#include "hardware/vreg.h"   // Needed for voltage scaling
-#include "pico/multicore.h"  // For multicore support
-#include "pico/mutex.h"      // For mutexes
-#include "pico/stdlib.h"     // For sleep and stdio initialization
+#include "hardware/clocks.h"          // For clock frequency information
+#include "hardware/gpio.h"            // For GPIO control
+#include "hardware/structs/scb.h"     // Access to System Control Block (for VTOR)
+#include "hardware/structs/systick.h" // Access to systick_hw
+#include "hardware/timer.h"           // Required for hardware timer access
+#include "hardware/vreg.h"            // Needed for voltage scaling
+#include "pico/multicore.h"           // For multicore support
+#include "pico/mutex.h"               // For mutexes
+#include "pico/stdlib.h"              // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
@@ -23,6 +26,28 @@
 
 // Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
+
+// Volatile variable to mimic STM32's uwTick
+static volatile uint32_t uwTick = 0;
+
+/**
+ * @brief Callback for the repeating timer.
+ * Works on both ARM and RISC-V.
+ */
+bool on_timer_tick(struct repeating_timer *t) {
+    uwTick++;
+    return true; // Keep the timer running
+}
+
+/**
+ * @brief Universal tick initialization using the SDK timer pool.
+ */
+void universal_tick_init() {
+    static struct repeating_timer timer;
+    // Negative delay means "measure from the start of the last callback"
+    // to avoid jitter. -1ms = 1000us frequency.
+    add_repeating_timer_ms(-1, on_timer_tick, NULL, &timer);
+}
 
 // Perform initialisation
 int pico_led_init(void) {
@@ -46,7 +71,7 @@ static inline uint32_t time_ms_32(void) {
 /**
  * @brief Toggles the state of the default LED.
  */
-void pico_toggle_led() {
+void __not_in_flash_func(pico_toggle_led)() {
     gpio_xor_mask64(((uint64_t)1 << PICO_DEFAULT_LED_PIN));
 }
 
@@ -63,7 +88,7 @@ void core1_entry() {
 
     while (1) {
 
-        now = time_ms_32(); // Unsure if mutex is needed here.
+        now = uwTick;
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -99,11 +124,14 @@ int main() {
 
     stdio_init_all(); // Initialize all standard I/O (UART, USB, etc.)
 
-    // Explicitly override the baud rate for UART0 to 2M
+    // Explicitly override the baud rate for UART0 to 921600 for better performance with the SDK's printf implementation
     uart_set_baudrate(uart0, 921600);
 
     // Give UART a moment to stabilize
     sleep_ms(50);
+
+    // Start the heartbeat (Cross-Platform)
+    universal_tick_init();
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
@@ -124,7 +152,7 @@ int main() {
 
     while (true) {
 
-        now = time_ms_32();
+        now = uwTick;
 
         if (now >= next_blink) {
             pico_toggle_led();

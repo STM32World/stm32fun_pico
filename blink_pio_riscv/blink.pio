@@ -17,51 +17,43 @@ pull_new:
 
 skip:
     ; --- LED On Phase ---
-    set pins, 0     ; Drive pin low (assuming active-low LED)
-    mov x, y        ; Load current delay value from Y into the X counter
+    set pins, 0           
+    mov x, y              
 on_delay:
-    jmp x-- on_delay [1] ; Loop here until X hits 0. [1] adds an extra cycle per loop.
+    jmp x-- on_delay [1]  ; 2 cycles per loop
 
     ; --- LED Off Phase ---
-    set pins, 1     ; Drive pin high (LED off)
-    mov x, y        ; Reload the delay value from Y into the X counter
+    set pins, 1           
+    mov x, y              
 off_delay:
-    jmp x-- off_delay    ; Loop here until X hits 0.
+    jmp x-- off_delay [1] ; 2 cycles per loop (Added [1] for symmetry)
 .wrap
 
 % c-sdk {
+
+#include "hardware/clocks.h"
+
 /**
  * @brief Initializes the PIO state machine for the blink program.
  * * @param pio    The PIO instance (pio0, pio1, or pio2 on RP2350).
  * @param sm     The state machine index (0-3).
  * @param offset The memory offset where the blink program is loaded.
  * @param pin    The GPIO pin to be used for the LED.
- * @param div    The clock divider to scale the system clock to the PIO frequency.
  */
-static inline void blink_program_init(PIO pio, uint sm, uint offset, uint pin, float div) {
-   // Create a default configuration for the state machine
+static inline void blink_program_init(PIO pio, uint sm, uint offset, uint pin) {
    pio_sm_config c = blink_program_get_default_config(offset);
-   
-   // Configure the 'set' instructions to operate on the LED pin
    sm_config_set_set_pins(&c, pin, 1);
-   
-   /** * Set up the Status register:
-    * STATUS_TX_LESSTHAN with a value of 1 means the 'mov x, status' 
-    * instruction will return 1 if the TX FIFO level is less than 1 (Empty).
-    * It returns 0 if there is at least one word waiting (Not Empty).
-    */
    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
    
-   // Map the GPIO pin for PIO usage
-   pio_gpio_init(pio, pin);
-   
-   // Set the LED pin direction to output
-   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
-   
-   // Set the clock divider
+   // --- AUTOMATIC DIVIDER CALCULATION ---
+   // Goal: Run PIO at 1MHz (1,000,000 Hz)
+   // divider = sys_clk / target_pio_clk
+   float div = (float)clock_get_hz(clk_sys) / 1000000.0f;
    sm_config_set_clkdiv(&c, div);
-   
-   // Apply configuration and initialize the state machine
+   // -------------------------------------
+
+   pio_gpio_init(pio, pin);
+   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
    pio_sm_init(pio, sm, offset, &c);
 }
 %}

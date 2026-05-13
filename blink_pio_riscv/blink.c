@@ -44,23 +44,31 @@ int pico_led_init(void) {
 }
 
 /**
- * @brief Returns a 32-bit millisecond counter.
- * Equivalent to STM32's uwTick.
- * * This uses the 64-bit hardware timer (1MHz) and scales to ms.
- * Rollover occurs every ~49.7 days.
+ * @brief Universal uS to mS for ARM and RISC-V.
+ * This version is overflow-safe for 64-bit inputs and warning-free.
  */
 static inline uint32_t time_ms_32(void) {
-    return (uint32_t)to_ms_since_boot(get_absolute_time());
+    // Constant: 0x418937 (approx 2^32 / 1000)
+    // We multiply by 0x418937 and shift by 32.
+    // This is mathematically: (us * 4294967) / 4294967296
+    // It is very fast and overflow-safe for uptime up to 136 years.
+    return (uint32_t)((time_us_64() * 0x418937ull) >> 32);
 }
 
 /**
- * @brief Helper to convert frequency to PIO loop delay.
+ * @brief Initialize the PIO program for blinking the LED.
+ * @param pio The PIO instance to use (e.g., pio0 or pio1).
+ * @param sm The state machine number to use (0-3).
+ * @param offset The offset in the PIO instruction memory where the program is loaded.
+ * @param pin The GPIO pin number connected to the LED.
  */
-uint32_t freq_to_pio_delay(float freq) {
-    if (freq < 0.1f)
-        freq = 0.1f;
-    // 150MHz / 150 div = 1MHz. 2 cycles per loop.
-    return (uint32_t)(500000.0f / freq);
+uint32_t freq_to_pio_delay(float target_freq) {
+    if (target_freq < 0.1f)
+        target_freq = 0.1f;
+
+    // Based on a fixed 1MHz PIO clock
+    // Y = 250,000 / target_freq
+    return (uint32_t)(250000.0f / target_freq);
 }
 
 /**
@@ -116,13 +124,13 @@ int main() {
     uart_set_baudrate(uart0, 921600);
 
     // --- PIO2 SETUP ---
-    PIO pio = pio2;
-    pio_set_gpio_base(pio, 16);
+    PIO pio = pio0;             // Use PIO0 for this example
+    pio_set_gpio_base(pio, 16); // This is essential since we're using GPIO 25 which is in the second block of 16 GPIOs (16-31)
 
     uint offset = pio_add_program(pio, &blink_program);
     uint sm = pio_claim_unused_sm(pio, true);
 
-    blink_program_init(pio, sm, offset, PICO_DEFAULT_LED_PIN, 150.0f);
+    blink_program_init(pio, sm, offset, PICO_DEFAULT_LED_PIN);
 
     // Starting at 0.5 Hz
     float current_freq = 0.5f;
@@ -156,7 +164,7 @@ int main() {
 
         if (now >= next_tick) { // Every second, print the current tick and loop count
 
-            if (!(now % 5000)) { // Every 5 seconds, update the frequency
+            if (!(now % 10000)) { // Every 5 seconds, update the frequency
                 if (current_freq < 1.0f)
                     current_freq = 1.0f;
                 else if (current_freq < 2.0f)
