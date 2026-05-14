@@ -118,7 +118,7 @@ int main() {
     mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
-    multicore_launch_core1(core1_entry);
+    // multicore_launch_core1(core1_entry);
 
     uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000;
 
@@ -132,9 +132,9 @@ int main() {
         }
 
         if (now >= next_tick) {
-            mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
+            // mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
             printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
-            mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
+            // mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
             next_tick = now + 1000;
         }

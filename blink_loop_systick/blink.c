@@ -112,11 +112,11 @@ int main() {
 
     // Boost voltage to 1.3V for stability at higher clocks
     // Standard is 1.1V; 1.3V is usually safe for 250MHz-350MHz
-    // vreg_set_voltage(VREG_VOLTAGE_1_30);
+    vreg_set_voltage(VREG_VOLTAGE_1_30);
 
     // Set the frequency in kHz (e.g., 300,000 kHz = 300 MHz)
     // 'true' means it will wait for the clock to stabilize
-    // set_sys_clock_khz(300000, true);
+    set_sys_clock_khz(300000, true);
 
     int rc = pico_led_init(); // Initialize the LED GPIO
 
