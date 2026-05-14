@@ -1,4 +1,12 @@
 /**
+ * @file blink.c
+ * @brief First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
+ *
+ * This example demonstrates how to use the Raspberry Pi Pico SDK to control the onboard LED and print messages from
+ * both cores of the RP2040 microcontroller. It initializes the LED GPIO, sets up a mutex for synchronized printing,
+ * and launches a secondary core to run a separate function while the main core handles LED blinking and
+ * periodic messages.
+ *
  * Copyright (c) 2026 STM32World <lth@stm32world.com>
  *
  * First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
