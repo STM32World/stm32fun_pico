@@ -2,12 +2,8 @@
  * @file blink.c
  * @brief First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
  *
- * This example demonstrates how to use the Raspberry Pi Pico SDK to control the onboard LED and print messages from
- * both cores of the RP2040 microcontroller. It initializes the LED GPIO, sets up a mutex for synchronized printing,
- * and launches a secondary core to run a separate function while the main core handles LED blinking and
- * periodic messages.
- *
  * Copyright (c) 2026 STM32World <lth@stm32world.com>
+ * See LICENSE for details.
  *
  * First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
  *
@@ -71,7 +67,7 @@ void core1_entry() {
 
     while (1) {
 
-        now = time_ms_32(); // Unsure if mutex is needed here.
+        now = time_ms_32();
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -126,7 +122,7 @@ int main() {
     mutex_exit(&printf_mutex);
 
     // Launch core1_entry function on Core 1
-    // multicore_launch_core1(core1_entry);
+    multicore_launch_core1(core1_entry);
 
     uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000;
 
@@ -140,14 +136,16 @@ int main() {
         }
 
         if (now >= next_tick) {
-            // mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
+            mutex_enter_blocking(&printf_mutex); // Ensure we've got exclusive access to printf
             printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
-            // mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
+            mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
             next_tick = now + 1000;
         }
 
         ++loop_cnt;
+
+        tight_loop_contents(); // Yield to other threads and allow interrupts to run
     }
 }
 
