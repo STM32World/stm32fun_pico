@@ -1,16 +1,18 @@
 /**
  * @file blink.c
- * @brief First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
+ * @brief Example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
+ * @author STM32World <lth@stm32world.com>
+ * @date 2026
  *
  * Copyright (c) 2026 STM32World <lth@stm32world.com>
- * See LICENSE for details.
  *
- * First example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
- *
+ * Third blink example for the Raspberry Pi Pico, demonstrating:
+ * - Basic GPIO control to blink the onboard LED
+ * - Multicore programming with Core 0 and Core 1
+ * - Synchronization using mutexes for safe access to shared resources (printf)
  */
 
 // Include necessary headers from the Pico SDK
-
 #include "hardware/clocks.h" // For clock frequency information
 #include "hardware/gpio.h"   // For GPIO control
 #include "hardware/vreg.h"   // Needed for voltage scaling
@@ -40,11 +42,7 @@ int pico_led_init(void) {
  * This version is overflow-safe for 64-bit inputs and warning-free.
  */
 static inline uint32_t time_ms_32(void) {
-    // Constant: 0x418937 (approx 2^32 / 1000)
-    // We multiply by 0x418937 and shift by 32.
-    // This is mathematically: (us * 4294967) / 4294967296
-    // It is very fast and overflow-safe for uptime up to 136 years.
-    return (uint32_t)((time_us_64() * 0x418937ull) >> 32);
+    return (uint32_t)(to_ms_since_boot(get_absolute_time()));
 }
 
 /**
