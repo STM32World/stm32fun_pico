@@ -13,12 +13,16 @@
  */
 
 // Include necessary headers from the Pico SDK
-#include "hardware/clocks.h" // For clock frequency information
-#include "hardware/gpio.h"   // For GPIO control
-#include "hardware/vreg.h"   // Needed for voltage scaling
-#include "pico/multicore.h"  // For multicore support
-#include "pico/mutex.h"      // For mutexes
-#include "pico/stdlib.h"     // For sleep and stdio initialization
+
+#include "hardware/clocks.h"          // For clock frequency information
+#include "hardware/gpio.h"            // For GPIO control
+#include "hardware/structs/scb.h"     // Access to System Control Block (for VTOR)
+#include "hardware/structs/systick.h" // Access to systick_hw
+#include "hardware/timer.h"           // Required for hardware timer access
+#include "hardware/vreg.h"            // Needed for voltage scaling
+#include "pico/multicore.h"           // For multicore support
+#include "pico/mutex.h"               // For mutexes
+#include "pico/stdlib.h"              // For sleep and stdio initialization
 
 // Include standard I/O for printf
 #include <stdio.h>
@@ -27,22 +31,40 @@
 #define LED_DELAY 500 // 500ms
 #endif
 
+#ifndef TICK_DELAY
+#define TICK_DELAY 1000
+#endif
+
 // Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
+
+// Volatile variable to mimic STM32's uwTick
+static volatile uint32_t uwTick = 0;
+
+/**
+ * @brief Callback for the repeating timer.
+ * Works on both ARM and RISC-V.
+ */
+bool on_timer_tick(struct repeating_timer *t) {
+    uwTick++;
+    return true; // Keep the timer running
+}
+
+/**
+ * @brief Universal tick initialization using the SDK timer pool.
+ */
+void universal_tick_init() {
+    static struct repeating_timer timer;
+    // Negative delay means "measure from the start of the last callback"
+    // to avoid jitter. -1ms = 1000us frequency.
+    add_repeating_timer_ms(-1, on_timer_tick, NULL, &timer);
+}
 
 // Perform initialisation
 int pico_led_init(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);              // The LED pin is defined in the board header as PICO_DEFAULT_LED_PIN
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT); // Set the LED pin as an output
     return PICO_OK;
-}
-
-/**
- * @brief Universal uS to mS for ARM and RISC-V.
- * This version is overflow-safe for 64-bit inputs and warning-free.
- */
-static inline uint32_t time_ms_32(void) {
-    return (uint32_t)(to_ms_since_boot(get_absolute_time()));
 }
 
 /**
@@ -61,18 +83,18 @@ void core1_entry() {
     printf("Core 1: Booting...\n");
     mutex_exit(&printf_mutex);
 
-    uint32_t now, loop_cnt = 0, next_tick = 1500;
+    uint32_t now, loop_cnt = 0, next_tick = TICK_DELAY + (TICK_DELAY / 2); // Start Core 1's ticks offset from Core 0
 
     while (1) {
 
-        now = time_ms_32();
+        now = uwTick;
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
             printf("Core 1 tick %lu (loop = %lu)\n", now, loop_cnt);
             mutex_exit(&printf_mutex);
             loop_cnt = 0;
-            next_tick = now + 1000;
+            next_tick = now + TICK_DELAY;
         }
 
         ++loop_cnt;
@@ -101,11 +123,14 @@ int main() {
 
     stdio_init_all(); // Initialize all standard I/O (UART, USB, etc.)
 
-    // Explicitly override the baud rate for UART0 to 2M
+    // Explicitly override the baud rate for UART0 to 921600 for better performance with the SDK's printf implementation
     uart_set_baudrate(uart0, 921600);
 
     // Give UART a moment to stabilize
     sleep_ms(50);
+
+    // Start the heartbeat (Cross-Platform)
+    universal_tick_init();
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
@@ -122,11 +147,11 @@ int main() {
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
-    uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = 1000;
+    uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = TICK_DELAY;
 
     while (true) {
 
-        now = time_ms_32();
+        now = uwTick;
 
         if (now >= next_blink) {
             pico_toggle_led();
@@ -138,12 +163,12 @@ int main() {
             printf("Core 0 tick %lu (loop = %lu)\n", now, loop_cnt);
             mutex_exit(&printf_mutex); // Release the mutex so Core 1 can print
             loop_cnt = 0;
-            next_tick = now + 1000;
+            next_tick = now + TICK_DELAY;
         }
 
         ++loop_cnt;
 
-        tight_loop_contents(); // Yield to other threads and allow interrupts to run
+        tight_loop_contents(); // Yield to other tasks and reduce power consumption
     }
 }
 
