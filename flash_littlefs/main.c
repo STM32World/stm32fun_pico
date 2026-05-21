@@ -25,7 +25,6 @@
 #include "pico/stdlib.h"              // For sleep and stdio initialization
 
 // Include standard I/O for printf
-#include <stdint.h>
 #include <stdio.h>
 
 #ifndef LED_DELAY
