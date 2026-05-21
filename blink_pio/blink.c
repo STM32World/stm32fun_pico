@@ -123,7 +123,7 @@ int main() {
     // Explicitly override the baud rate for UART0 to 2M
     uart_set_baudrate(uart0, 921600);
 
-    // --- PIO2 SETUP ---
+    // --- PIO0 SETUP ---
     PIO pio = pio0;             // Use PIO0 for this example
     pio_set_gpio_base(pio, 16); // This is essential since we're using GPIO 25 which is in the second block of 16 GPIOs (16-31)
 
