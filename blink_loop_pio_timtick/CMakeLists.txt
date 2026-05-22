@@ -39,10 +39,14 @@ project(main C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Tell CMake to go enter the 'src' folder
+#add_subdirectory(src)
+
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(main
     main.c
+    src/systick.c
 )
 
 # Add specific optimization flags to your 'main' target
@@ -55,6 +59,7 @@ target_compile_options(main PRIVATE
 # pull in common dependencies
 target_link_libraries(
     main 
+    systick
     pico_stdlib 
     pico_multicore
 )
