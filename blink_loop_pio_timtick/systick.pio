@@ -1,0 +1,39 @@
+.program systick
+
+    pull block          ; One-time setup: Blocks until C code pushes the loop max
+    mov y, osr          ; Copy that value permanently to Y
+
+.wrap_target
+    mov x, y            ; 1 cycle: Reset countdown from Y
+delay_loop:
+    jmp x-- delay_loop  ; 2 cycles per iteration
+    
+    push block          ; 1 cycle: Handshake with DMA
+.wrap                   ; 2 cycles: Hardware wrap penalty on RP2350
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void systick_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = systick_program_get_default_config(offset);
+    
+    // Fix the 2x multiplier directly at the hardware clock level.
+    // We double the divider target to slow the PIO engine down to a true 1 MHz.
+    float div = (float)clock_get_hz(clk_sys) / 1000000.0f;
+    sm_config_set_clkdiv(&c, div * 2.0f); 
+    
+    // Configure input shift parameters
+    sm_config_set_in_shift(&c, false, false, 32);
+    
+    // Load configuration into the state machine
+    pio_sm_init(pio, sm, offset, &c);
+    
+    // Enable the state machine so it is alive and waiting at 'pull block'
+    pio_sm_set_enabled(pio, sm, true);
+    
+    // Load 497 into the TX FIFO.
+    // 497 iterations * 2 cycles = 994 cycles + 2 cycles (for the 0 pass) = 996 cycles.
+    // 996 loop cycles + 4 fixed overhead cycles = EXACTLY 1000 cycles (1 ms).
+    pio_sm_put_blocking(pio, sm, 497);
+}
+%}

@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "systick.h" // Include our custom systick header
+
 #ifndef LED_DELAY
 #define LED_DELAY 500 // 500ms
 #endif
@@ -88,7 +90,7 @@ void core1_entry() {
 
     while (1) {
 
-        now = uwTick;
+        now = get_millis(); // Use our custom systick timer for Core 1's timing
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -130,8 +132,10 @@ int main() {
     // Give UART a moment to stabilize
     sleep_ms(50);
 
+    systick_init(pio0); // Initialize the PIO-based systick timer on PIO instance 0
+
     // Start the heartbeat (Cross-Platform)
-    universal_tick_init();
+    // universal_tick_init();
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
@@ -152,7 +156,7 @@ int main() {
 
     while (true) {
 
-        now = uwTick;
+        now = get_millis(); // Use our custom systick timer for Core 0's timing
 
         if (now >= next_blink) {
             pico_toggle_led();

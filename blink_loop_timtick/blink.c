@@ -10,6 +10,8 @@
  * - Basic GPIO control to blink the onboard LED
  * - Multicore programming with Core 0 and Core 1
  * - Synchronization using mutexes for safe access to shared resources (printf)
+ * - A universal tick implementation using the SDK's repeating timer, mimicking the behavior of STM32's SysTick
+ *
  */
 
 // Include necessary headers from the Pico SDK

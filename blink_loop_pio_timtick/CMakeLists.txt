@@ -49,6 +49,11 @@ add_executable(main
     src/systick.c
 )
 
+# Tell CMake where to look for systick.h
+target_include_directories(main PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 # Add specific optimization flags to your 'main' target
 target_compile_options(main PRIVATE
     -Ofast
@@ -56,12 +61,19 @@ target_compile_options(main PRIVATE
     -fdata-sections
 )
 
+# 1. MAGIC HAPPENS HERE: Tell CMake to compile the PIO file
+pico_generate_pio_header(main 
+    ${CMAKE_CURRENT_LIST_DIR}/systick.pio
+)
+
 # pull in common dependencies
 target_link_libraries(
     main 
-    systick
     pico_stdlib 
     pico_multicore
+    hardware_pio
+    hardware_dma
+    hardware_clocks
 )
 
 pico_enable_stdio_uart(main 1)
