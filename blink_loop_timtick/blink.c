@@ -42,14 +42,14 @@
 auto_init_mutex(printf_mutex);
 
 // Volatile variable to mimic STM32's uwTick
-static volatile uint32_t uwTick = 0;
+static volatile uint32_t systick = 0;
 
 /**
  * @brief Callback for the repeating timer.
  * Works on both ARM and RISC-V.
  */
 bool on_timer_tick(struct repeating_timer *t) {
-    uwTick++;
+    systick++;
     return true; // Keep the timer running
 }
 
@@ -86,11 +86,13 @@ void core1_entry() {
     printf("Core 1: Booting...\n");
     mutex_exit(&printf_mutex);
 
+    universal_tick_init();
+
     uint32_t now, loop_cnt = 0, next_tick = TICK_DELAY + (TICK_DELAY / 2); // Start Core 1's ticks offset from Core 0
 
     while (1) {
 
-        now = uwTick;
+        now = systick;
 
         if (now >= next_tick) {
             mutex_enter_blocking(&printf_mutex);
@@ -132,9 +134,6 @@ int main() {
     // Give UART a moment to stabilize
     sleep_ms(50);
 
-    // Start the heartbeat (Cross-Platform)
-    universal_tick_init();
-
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
     printf("Running on %s at %d MHz\n",
@@ -147,6 +146,9 @@ int main() {
 
     mutex_exit(&printf_mutex);
 
+    // Start the heartbeat (Cross-Platform)
+    // universal_tick_init();
+
     // Launch core1_entry function on Core 1
     multicore_launch_core1(core1_entry);
 
@@ -154,7 +156,7 @@ int main() {
 
     while (true) {
 
-        now = uwTick;
+        now = systick;
 
         if (now >= next_blink) {
             pico_toggle_led();

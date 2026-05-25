@@ -41,28 +41,6 @@
 // Mutex for synchronizing access to printf
 auto_init_mutex(printf_mutex);
 
-// Volatile variable to mimic STM32's uwTick
-static volatile uint32_t uwTick = 0;
-
-/**
- * @brief Callback for the repeating timer.
- * Works on both ARM and RISC-V.
- */
-bool on_timer_tick(struct repeating_timer *t) {
-    uwTick++;
-    return true; // Keep the timer running
-}
-
-/**
- * @brief Universal tick initialization using the SDK timer pool.
- */
-void universal_tick_init() {
-    static struct repeating_timer timer;
-    // Negative delay means "measure from the start of the last callback"
-    // to avoid jitter. -1ms = 1000us frequency.
-    add_repeating_timer_ms(-1, on_timer_tick, NULL, &timer);
-}
-
 // Perform initialisation
 int pico_led_init(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);              // The LED pin is defined in the board header as PICO_DEFAULT_LED_PIN
@@ -133,9 +111,6 @@ int main() {
     sleep_ms(50);
 
     systick_init(pio0); // Initialize the PIO-based systick timer on PIO instance 0
-
-    // Start the heartbeat (Cross-Platform)
-    // universal_tick_init();
 
     mutex_enter_blocking(&printf_mutex); // Mutex is not strictly necessary here since Core 1 hasn't started yet, but it's good practice to be consistent
     printf("\n\n\nCore 0: Booting...\n");
