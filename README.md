@@ -1,2 +1,2 @@
 # stm32fun_pico
-RP2350 Pico
+STM32World RP2350 Pico examples
