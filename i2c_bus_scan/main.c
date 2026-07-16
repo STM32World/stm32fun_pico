@@ -1,5 +1,5 @@
 /**
- * @file blink.c
+ * @file main.c
  * @brief Example of using the Raspberry Pi Pico SDK to blink the onboard LED and print messages from both cores.
  * @author STM32World <lth@stm32world.com>
  * @date 2026
@@ -18,6 +18,7 @@
 
 #include "hardware/clocks.h"          // For clock frequency information
 #include "hardware/gpio.h"            // For GPIO control
+#include "hardware/i2c.h"             // For I2C support
 #include "hardware/structs/scb.h"     // Access to System Control Block (for VTOR)
 #include "hardware/structs/systick.h" // Access to systick_hw
 #include "hardware/timer.h"           // Required for hardware timer access
@@ -94,6 +95,12 @@ void pico_toggle_led() {
     gpio_xor_mask64(((uint64_t)1 << PICO_DEFAULT_LED_PIN));
 }
 
+// I2C reserves some addresses for special purposes. We exclude these from the scan.
+// These are any addresses of the form 000 0xxx or 111 1xxx
+bool reserved_addr(uint8_t addr) {
+    return (addr & 0x78) == 0 || (addr & 0x78) == 0x78;
+}
+
 /**
  * @brief Entry point for Core 1.
  */
@@ -151,7 +158,7 @@ int main() {
     stdio_init_all(); // Initialize all standard I/O (UART, USB, etc.)
 
     // Explicitly override the baud rate for UART0 to 921600 for better performance with the SDK's printf implementation
-    uart_set_baudrate(uart0, 921600);
+    // uart_set_baudrate(uart0, 921600);
 
     // Give UART a moment to stabilize
     sleep_ms(50);
@@ -171,8 +178,55 @@ int main() {
     // Start the heartbeat (Cross-Platform)
     universal_tick_init();
 
+    i2c_init(i2c_default, 100 * 1000);
+    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+
+    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+    mutex_enter_blocking(&printf_mutex);
+    printf("I2C initialized on SDA pin %d and SCL pin %d\n", PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN);
+
+    printf("\nI2C Bus Scan\n");
+    printf("   0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
+
+    // Get a direct pointer to the raw hardware registers for your configured I2C block
+    i2c_hw_t *hw = i2c_get_hw(i2c_default);
+
+    for (int addr = 0; addr < (1 << 7); ++addr) {
+        if (addr % 16 == 0) {
+            printf("%02x ", addr);
+        }
+
+        int ret;
+        uint8_t rxdata;
+
+        if (reserved_addr(addr)) {
+            ret = PICO_ERROR_GENERIC;
+        } else {
+            // 1. Standard SDK Read
+            ret = i2c_read_blocking(i2c_default, addr, &rxdata, 1, false);
+
+            // 2. SILICON FIX: Manually read the clear-abort register to release
+            // the hardware state machine if the address just NACKed.
+            volatile uint32_t dummy_clear = hw->clr_tx_abrt;
+            (void)dummy_clear;
+        }
+
+        // Standard return evaluation
+        printf(ret < 0 ? ".  " : "@  ");
+        printf(addr % 16 == 15 ? "\n" : "");
+
+        // Give the state machine a microscopic window to settle before the next address
+        sleep_us(10);
+    }
+    printf("Done.\n");
+
+    mutex_exit(&printf_mutex);
+
     // Launch core1_entry function on Core 1
-    multicore_launch_core1(core1_entry);
+    // multicore_launch_core1(core1_entry);
 
     uint32_t now, loop_cnt = 0, next_blink = LED_DELAY, next_tick = TICK_DELAY;
 

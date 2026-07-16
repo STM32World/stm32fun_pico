@@ -34,35 +34,35 @@ set(PICO_BOARD sl_mcu_rp2354 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(blink C CXX ASM)
+project(main C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(blink
-    blink.c
+add_executable(main
+    main.c
 )
 
-# Add specific optimization flags to your 'blink' target
-target_compile_options(blink PRIVATE
+# Add specific optimization flags to your 'main' target
+target_compile_options(main PRIVATE
     -O3
     -ffunction-sections 
     -fdata-sections
 )
 
 # pull in common dependencies
-target_link_libraries(
-    blink 
+target_link_libraries(main 
     pico_stdlib 
     pico_multicore
+    hardware_i2c
 )
 
-pico_enable_stdio_uart(blink 1)
-pico_enable_stdio_usb(blink 0)
+pico_enable_stdio_uart(main 1)
+pico_enable_stdio_usb(main 0)
 
 # create map/bin/hex file etc.
-pico_add_extra_outputs(blink)
+pico_add_extra_outputs(main)
 
 # add url via pico_set_program_url
